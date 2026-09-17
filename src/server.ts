@@ -5,7 +5,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { FacebookClient } from './client/facebook-client.js';
 import { logger } from './utils/logger.js';
-import { createApiRouter } from './routes/api.js';
+import { createApiRouter, authAndPlaygroundMiddleware } from './routes/api.js';
 import {
   SearchMarketplaceSchema,
   GetListingDetailsSchema,
@@ -145,73 +145,6 @@ export function createExpressApp(client: FacebookClient): Express {
   app.use(cors());
   app.use(express.json({ limit: '5mb' }));
 
-  // In-memory rate limiting map for demo / unauthenticated playground
-  const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-
-  // Authentication Middleware conforming to MCP_HOSTING_SPEC.md
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Exempt public health check and root info
-    const envPrefix = (process.env.BASE_PATH || '').replace(/\/+$/, '');
-    const path = req.path;
-    if (
-      path === '/' ||
-      path === '/health' ||
-      path.endsWith('/health') ||
-      (envPrefix && (path === envPrefix || path === `${envPrefix}/`))
-    ) {
-      return next();
-    }
-
-    const configuredApiKey = process.env.API_KEY?.trim();
-    if (!configuredApiKey) {
-      // No server API key configured: allow request
-      return next();
-    }
-
-    // Extract incoming API Key
-    let clientKey: string | undefined = undefined;
-    const authHeader = req.headers['authorization'];
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      clientKey = authHeader.substring(7).trim();
-    } else if (req.headers['x-api-key']) {
-      clientKey = (req.headers['x-api-key'] as string).trim();
-    } else if (req.query.apiKey) {
-      clientKey = (req.query.apiKey as string).trim();
-    }
-
-    if (clientKey === configuredApiKey) {
-      // Authenticated with full quota
-      return next();
-    }
-
-    // Section 3: Limited Public Playground / Demo Mode
-    // Rate limit per IP: 10 requests per minute
-    const ip = req.ip || req.socket.remoteAddress || 'unknown-ip';
-    const now = Date.now();
-    const windowMs = 60 * 1000;
-    const maxRequests = 10;
-
-    let tracker = rateLimitMap.get(ip);
-    if (!tracker || now > tracker.resetTime) {
-      tracker = { count: 1, resetTime: now + windowMs };
-      rateLimitMap.set(ip, tracker);
-    } else {
-      tracker.count++;
-    }
-
-    if (tracker.count > maxRequests) {
-      res.status(429).json({
-        error: 'Rate limit exceeded for public playground. Please provide a valid API key via x-api-key header.',
-        retryAfter: Math.ceil((tracker.resetTime - now) / 1000),
-      });
-      return;
-    }
-
-    res.setHeader('X-Playground-Demo', 'true');
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - tracker.count).toString());
-    next();
-  });
-
   const envPrefix = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 
   // Mount REST API routes
@@ -241,7 +174,7 @@ export function createExpressApp(client: FacebookClient): Express {
   // ==========================================
   // MCP SSE Stream Endpoint
   // ==========================================
-  app.get(ssePaths, async (req: Request, res: Response) => {
+  app.get(ssePaths, authAndPlaygroundMiddleware, async (req: Request, res: Response) => {
     const basePath = getBasePath(req);
     const messagesPath = `${basePath}/messages`;
 
@@ -261,7 +194,7 @@ export function createExpressApp(client: FacebookClient): Express {
   // ==========================================
   // MCP Message POST Endpoint
   // ==========================================
-  app.post(messagesPaths, async (req: Request, res: Response) => {
+  app.post(messagesPaths, authAndPlaygroundMiddleware, async (req: Request, res: Response) => {
     const sessionId = req.query.sessionId as string;
     const transport = transports.get(sessionId);
 
@@ -283,7 +216,7 @@ export function createExpressApp(client: FacebookClient): Express {
   // Modern MCP Streamable HTTP / HTTP POST Endpoint
   // Accepts direct JSON-RPC 2.0 requests over HTTP POST
   // ==========================================
-  app.post(mcpPaths, async (req: Request, res: Response) => {
+  app.post(mcpPaths, authAndPlaygroundMiddleware, async (req: Request, res: Response) => {
     const body: JsonRpcRequest = req.body;
     if (!body || body.jsonrpc !== '2.0' || !body.method) {
       res.status(400).json({
@@ -400,6 +333,10 @@ export function createExpressApp(client: FacebookClient): Express {
       if (method === 'tools/call') {
         const toolName = params?.name;
         const toolArgs = params?.arguments || {};
+
+        if ((req as any).isPlayground && toolArgs && toolArgs.limit) {
+          toolArgs.limit = Math.min(toolArgs.limit, 5);
+        }
 
         let toolResult: any;
         if (toolName === 'search_marketplace') {

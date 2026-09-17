@@ -109,7 +109,8 @@ export function formatPrice(amount: number, currency: string = 'USD'): string {
  */
 export function hashCookieSalt(cookie?: string): string {
   if (!cookie) return 'public';
-  return crypto.createHash('sha256').update(cookie.trim()).digest('hex').substring(0, 16);
+  const hash = crypto.createHash('sha256').update(cookie.trim()).digest('hex').substring(0, 16);
+  return `c_${hash}`;
 }
 
 /**

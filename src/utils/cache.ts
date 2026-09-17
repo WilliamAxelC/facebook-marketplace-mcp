@@ -82,3 +82,8 @@ export class MemoryCache<T = any> {
     };
   }
 }
+
+// Global cache instance conforming to MCP_HOSTING_SPEC
+const defaultTTL = parseInt(process.env.CACHE_DEFAULT_TTL || '300', 10);
+export const globalCache = new MemoryCache({ defaultTTLSeconds: defaultTTL });
+

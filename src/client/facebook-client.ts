@@ -8,7 +8,7 @@ import {
   MarketplaceSearchResult,
 } from './types.js';
 import { filterMockListings, MOCK_CATEGORIES, MOCK_ITEMS } from './mock-data.js';
-import { MemoryCache } from '../utils/cache.js';
+import { MemoryCache, globalCache } from '../utils/cache.js';
 import { formatPrice, hashCookieSalt, parseMarketplaceUrl } from '../utils/formatters.js';
 import { logger } from '../utils/logger.js';
 
@@ -18,7 +18,7 @@ export class FacebookClient {
   private cache: MemoryCache;
   private lastRequestTime: number = 0;
 
-  constructor(config: ClientConfig = {}) {
+  constructor(config: ClientConfig = {}, cache?: MemoryCache) {
     this.config = {
       defaultLocation: 'jakarta',
       requestDelayMs: 400,
@@ -26,10 +26,7 @@ export class FacebookClient {
       ...config,
     };
 
-    this.cache = new MemoryCache({
-      defaultTTLSeconds: 300,
-      maxEntries: 1000,
-    });
+    this.cache = cache || globalCache;
 
     const headers: Record<string, string> = {
       'User-Agent':
