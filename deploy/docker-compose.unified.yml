@@ -1,0 +1,104 @@
+version: '3.8'
+
+# ==============================================================================
+# Unified Multi-Service MCP Compose Stack for mcp.cuang.dev
+# Services:
+#   - Nginx Reverse Proxy (mcp.cuang.dev)
+#   - Facebook Marketplace MCP (/facebook)
+#   - Shopee Indonesia MCP (/shopee)
+#   - Tokopedia MCP (/tokopedia)
+# ==============================================================================
+
+services:
+  # -------------------------------------------------------------
+  # Nginx Gateway
+  # -------------------------------------------------------------
+  nginx-gateway:
+    image: nginx:alpine
+    container_name: mcp-nginx-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - facebook-marketplace-mcp
+      - shopee-indonesia-mcp
+    networks:
+      - mcp-network
+
+  # -------------------------------------------------------------
+  # Facebook Marketplace MCP Service
+  # -------------------------------------------------------------
+  facebook-marketplace-mcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: facebook-marketplace-mcp
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - BASE_PATH=/facebook
+      - API_KEY=${API_KEY:-}
+      - FB_COOKIE=${FB_COOKIE:-}
+      - FB_DTSG=${FB_DTSG:-}
+      - DEFAULT_LOCATION=${DEFAULT_LOCATION:-jakarta}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - MOCK_ON_BLOCKED=${MOCK_ON_BLOCKED:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+
+  # -------------------------------------------------------------
+  # Shopee Indonesia MCP Service
+  # -------------------------------------------------------------
+  shopee-indonesia-mcp:
+    build:
+      context: ../../shopee-indonesia-mcp
+      dockerfile: Dockerfile
+    container_name: shopee-indonesia-mcp
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - BASE_PATH=/shopee
+      - API_KEY=${API_KEY:-}
+      - SHOPEE_COOKIE=${SHOPEE_COOKIE:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+
+  # -------------------------------------------------------------
+  # Tokopedia MCP Service (Placeholder ready to mount upon build)
+  # -------------------------------------------------------------
+  tokopedia-mcp:
+    image: alpine:latest
+    container_name: tokopedia-mcp
+    restart: unless-stopped
+    command: ["sh", "-c", "echo 'Tokopedia MCP container initialized'; sleep infinity"]
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    name: mcp-network
+    driver: bridge

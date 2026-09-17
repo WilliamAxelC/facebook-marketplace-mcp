@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  facebook-marketplace-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: facebook-marketplace-mcp
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3002}:3000"
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - BASE_PATH=${BASE_PATH:-/facebook}
+      - API_KEY=${API_KEY:-}
+      - FB_COOKIE=${FB_COOKIE:-}
+      - FB_DTSG=${FB_DTSG:-}
+      - DEFAULT_LOCATION=${DEFAULT_LOCATION:-jakarta}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - REQUEST_DELAY_MS=${REQUEST_DELAY_MS:-400}
+      - MOCK_ON_BLOCKED=${MOCK_ON_BLOCKED:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    name: mcp-network
+    driver: bridge

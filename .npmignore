@@ -1,0 +1,10 @@
+src/
+test/
+.env*
+.git/
+.gitignore
+*.log
+docker-compose*.yml
+Dockerfile
+nginx/
+tsconfig.json
