@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ quiet: true });
 
 import { FacebookClient } from './client/facebook-client.js';
 import { createExpressApp, startStdioServer } from './server.js';

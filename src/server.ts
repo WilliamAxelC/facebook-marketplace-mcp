@@ -151,8 +151,14 @@ export function createExpressApp(client: FacebookClient): Express {
   // Authentication Middleware conforming to MCP_HOSTING_SPEC.md
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Exempt public health check and root info
+    const envPrefix = (process.env.BASE_PATH || '').replace(/\/+$/, '');
     const path = req.path;
-    if (path === '/' || path === '/health' || path.endsWith('/health')) {
+    if (
+      path === '/' ||
+      path === '/health' ||
+      path.endsWith('/health') ||
+      (envPrefix && (path === envPrefix || path === `${envPrefix}/`))
+    ) {
       return next();
     }
 
@@ -206,8 +212,13 @@ export function createExpressApp(client: FacebookClient): Express {
     next();
   });
 
+  const envPrefix = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+
   // Mount REST API routes
   app.use(createApiRouter(client));
+  if (envPrefix) {
+    app.use(envPrefix, createApiRouter(client));
+  }
 
   // Active SSE transports keyed by sessionId
   const transports = new Map<string, SSEServerTransport>();
@@ -218,14 +229,19 @@ export function createExpressApp(client: FacebookClient): Express {
     if (forwardedPrefix) {
       return forwardedPrefix.replace(/\/+$/, '');
     }
-    const envPrefix = process.env.BASE_PATH || '';
-    return envPrefix.replace(/\/+$/, '');
+    const envBase = process.env.BASE_PATH || '';
+    return envBase.replace(/\/+$/, '');
   };
+
+  const ssePaths = envPrefix ? ['/sse', `${envPrefix}/sse`] : ['/sse'];
+  const messagesPaths = envPrefix ? ['/messages', `${envPrefix}/messages`] : ['/messages'];
+  const mcpPaths = envPrefix ? ['/mcp', `${envPrefix}/mcp`] : ['/mcp'];
+  const rootPaths = envPrefix ? ['/', envPrefix, `${envPrefix}/`] : ['/'];
 
   // ==========================================
   // MCP SSE Stream Endpoint
   // ==========================================
-  app.get('/sse', async (req: Request, res: Response) => {
+  app.get(ssePaths, async (req: Request, res: Response) => {
     const basePath = getBasePath(req);
     const messagesPath = `${basePath}/messages`;
 
@@ -245,7 +261,7 @@ export function createExpressApp(client: FacebookClient): Express {
   // ==========================================
   // MCP Message POST Endpoint
   // ==========================================
-  app.post('/messages', async (req: Request, res: Response) => {
+  app.post(messagesPaths, async (req: Request, res: Response) => {
     const sessionId = req.query.sessionId as string;
     const transport = transports.get(sessionId);
 
@@ -254,14 +270,20 @@ export function createExpressApp(client: FacebookClient): Express {
       return;
     }
 
-    await transport.handlePostMessage(req, res);
+    try {
+      await transport.handlePostMessage(req, res, req.body);
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
   });
 
   // ==========================================
   // Modern MCP Streamable HTTP / HTTP POST Endpoint
   // Accepts direct JSON-RPC 2.0 requests over HTTP POST
   // ==========================================
-  app.post('/mcp', async (req: Request, res: Response) => {
+  app.post(mcpPaths, async (req: Request, res: Response) => {
     const body: JsonRpcRequest = req.body;
     if (!body || body.jsonrpc !== '2.0' || !body.method) {
       res.status(400).json({
@@ -424,7 +446,7 @@ export function createExpressApp(client: FacebookClient): Express {
   });
 
   // Root information endpoint
-  app.get('/', (req: Request, res: Response) => {
+  app.get(rootPaths, (req: Request, res: Response) => {
     const basePath = getBasePath(req);
     res.json({
       service: 'Facebook Marketplace MCP & REST Server',
