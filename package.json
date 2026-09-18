@@ -51,5 +51,10 @@
     "@types/node": "22.20.3",
     "tsx": "4.23.13",
     "typescript": "7.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
